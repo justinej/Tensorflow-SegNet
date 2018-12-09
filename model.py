@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
+from tensorflow.python.ops import gen_nn_ops
 
 import os, sys
 import numpy as np
@@ -32,6 +33,16 @@ NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 367
 NUM_EXAMPLES_PER_EPOCH_FOR_TEST = 101
 NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 1
 TEST_ITER = NUM_EXAMPLES_PER_EPOCH_FOR_TEST / BATCH_SIZE
+
+@ops.RegisterGradient("MaxPoolWithArgmax")
+def _MaxPoolWithArgmaxGrad(op, grad, unused_argmax_grad):
+  return gen_nn_ops._max_pool_grad(op.inputs[0],
+                                   op.outputs[0],
+                                   grad,
+                                   op.get_attr("ksize"),
+                                   op.get_attr("strides"),
+                                   padding=op.get_attr("padding"),
+                                   data_format='NHWC')
 
 def msra_initializer(kl, dl):
     """
@@ -316,6 +327,7 @@ def test(FLAGS):
 
     threads = tf.train.start_queue_runners(sess=sess)
     hist = np.zeros((NUM_CLASSES, NUM_CLASSES))
+    count = 0
     for image_batch, label_batch  in zip(images, labels):
 
       feed_dict = {
@@ -323,15 +335,16 @@ def test(FLAGS):
         test_labels_node: label_batch,
         phase_train: False
       }
-
+      start_time = datetime.now()
       dense_prediction, im = sess.run([logits, pred], feed_dict=feed_dict)
+      print("sess.run took " + str(datetime.now()-start_time).split(":")[2] + " seconds")
       # output_image to verify
       if (FLAGS.save_image):
-          writeImage(im[0], 'testing_image.png')
-          # writeImage(im[0], 'out_image/'+str(image_filenames[count]).split('/')[-1])
+          # writeImage(im[0], 'testing_image.png')
+          writeImage(im[0], 'out_image/'+str(image_filenames[count]).split('/')[-1])
 
       hist += get_hist(dense_prediction, label_batch)
-      # count+=1
+      count+=1
     acc_total = np.diag(hist).sum() / hist.sum()
     iu = np.diag(hist) / (hist.sum(1) + hist.sum(0) - np.diag(hist))
     print("acc: ", acc_total)
